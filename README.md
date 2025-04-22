@@ -43,7 +43,7 @@ image-registration-app/
 
 1. Clone the repository:
    ```
-   git clone https://github.com/yourusername/image-registration-app.git
+   git clone https://github.com/sichendart/image-registration-app.git
    cd image-registration-app
    ```
 
