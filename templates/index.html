@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Registration Tool</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .image-container {
+            margin-bottom: 20px;
+        }
+        .result-image {
+            width: 100%;
+            max-width: 500px;
+            height: auto;
+            margin-bottom: 10px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        .loading {
+            display: none;
+            text-align: center;
+            margin: 20px 0;
+        }
+        .spinner-border {
+            width: 3rem;
+            height: 3rem;
+        }
+        #results {
+            display: none;
+        }
+        .threshold-container {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-5">
+        <h1 class="mb-4">Image Registration Tool</h1>
+        
+        <div class="card mb-4">
+            <div class="card-header">
+                <h4>Upload Images</h4>
+            </div>
+            <div class="card-body">
+                <form id="registrationForm">
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="baseImage" class="form-label">Base Image (Reference)</label>
+                            <input type="file" class="form-control" id="baseImage" name="baseImage" accept=".jpg,.jpeg,.png,.tif,.tiff,.h5" required>
+                            <div class="form-text">Supported formats: JPG, PNG, TIFF, H5</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="targetImage" class="form-label">Target Image (To Register)</label>
+                            <input type="file" class="form-control" id="targetImage" name="targetImage" accept=".jpg,.jpeg,.png,.tif,.tiff,.h5" required>
+                            <div class="form-text">Supported formats: JPG, PNG, TIFF, H5</div>
+                        </div>
+                    </div>
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <label for="registrationMethod" class="form-label">Registration Method</label>
+                            <select class="form-select" id="registrationMethod" name="registrationMethod">
+                                <option value="rigid">Rigid Registration</option>
+                                <option value="nonrigid">Non-Rigid Registration</option>
+                                <option value="sift">SIFT Feature-based</option>
+                                <option value="orb">ORB Feature-based</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="cropSize" class="form-label">Crop Border Size</label>
+                            <input type="number" class="form-control" id="cropSize" name="cropSize" value="0" min="0">
+                            <div class="form-text">Border size to crop from all sides (pixels)</div>
+                        </div>
+                        <div class="col-md-4 threshold-container" id="thresholdContainer">
+                            <label for="threshold" class="form-label">Flow Threshold</label>
+                            <input type="number" class="form-control" id="threshold" name="threshold" value="10" min="0">
+                            <div class="form-text">Threshold for optical flow vectors (pixels)</div>
+                        </div>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary">Register Images</button>
+                </form>
+            </div>
+        </div>
+        
+        <div class="loading" id="loading">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2">Processing images, please wait...</p>
+        </div>
+        
+        <div id="results">
+            <h2 class="mb-4">Registration Results</h2>
+            
+            <div class="row">
+                <div class="col-md-6 image-container">
+                    <h4>Base Image</h4>
+                    <img id="baseImageResult" class="result-image" alt="Base Image">
+                </div>
+                <div class="col-md-6 image-container">
+                    <h4>Target Image</h4>
+                    <img id="targetImageResult" class="result-image" alt="Target Image">
+                </div>
+            </div>
+            
+            <div class="row">
+                <div class="col-md-6 image-container">
+                    <h4>Before Registration (RGB Overlay)</h4>
+                    <img id="rgbBeforeResult" class="result-image" alt="RGB Before Registration">
+                </div>
+                <div class="col-md-6 image-container">
+                    <h4>After Registration (RGB Overlay)</h4>
+                    <img id="rgbAfterResult" class="result-image" alt="RGB After Registration">
+                </div>
+            </div>
+            
+            <div class="row">
+                <div class="col-md-6 image-container">
+                    <h4>Registered Image</h4>
+                    <img id="registeredImageResult" class="result-image" alt="Registered Image">
+                </div>
+                <div class="col-md-6 image-container" id="quiverContainer" style="display: none;">
+                    <h4>Flow Vector Field</h4>
+                    <img id="quiverPlotResult" class="result-image" alt="Quiver Plot">
+                </div>
+            </div>
+            
+            <div class="row" id="histogramContainer" style="display: none;">
+                <div class="col-md-12 image-container">
+                    <h4>Flow Vector Histograms</h4>
+                    <img id="histogramPlotResult" class="result-image" style="max-width: 100%;" alt="Histogram Plot">
+                </div>
+            </div>
+            
+            <div class="alert alert-danger mt-3" id="errorAlert" style="display: none;">
+                <strong>Error:</strong> <span id="errorMessage"></span>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const registrationForm = document.getElementById('registrationForm');
+            const registrationMethod = document.getElementById('registrationMethod');
+            const thresholdContainer = document.getElementById('thresholdContainer');
+            const loading = document.getElementById('loading');
+            const results = document.getElementById('results');
+            const quiverContainer = document.getElementById('quiverContainer');
+            const histogramContainer = document.getElementById('histogramContainer');
+            const errorAlert = document.getElementById('errorAlert');
+            const errorMessage = document.getElementById('errorMessage');
+            
+            // Show/hide threshold input based on registration method
+            registrationMethod.addEventListener('change', function() {
+                if (this.value === 'nonrigid') {
+                    thresholdContainer.style.display = 'block';
+                } else {
+                    thresholdContainer.style.display = 'none';
+                }
+            });
+            
+            // Form submission
+            registrationForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                // Show loading spinner, hide results and errors
+                loading.style.display = 'block';
+                results.style.display = 'none';
+                errorAlert.style.display = 'none';
+                
+                // Create form data for submission
+                const formData = new FormData(registrationForm);
+                
+                // Send AJAX request
+                fetch('/register', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        return response.json().then(data => {
+                            throw new Error(data.error || 'Unknown error occurred');
+                        });
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    // Hide loading spinner
+                    loading.style.display = 'none';
+                    
+                    // Display results
+                    document.getElementById('baseImageResult').src = 'data:image/png;base64,' + data.baseImage;
+                    document.getElementById('targetImageResult').src = 'data:image/png;base64,' + data.targetImage;
+                    document.getElementById('registeredImageResult').src = 'data:image/png;base64,' + data.registeredImage;
+                    document.getElementById('rgbBeforeResult').src = 'data:image/png;base64,' + data.rgbBefore;
+                    document.getElementById('rgbAfterResult').src = 'data:image/png;base64,' + data.rgbAfter;
+                    
+                    // Show/hide quiver plot based on registration method
+                    if (data.quiverPlot) {
+                        document.getElementById('quiverPlotResult').src = 'data:image/png;base64,' + data.quiverPlot;
+                        quiverContainer.style.display = 'block';
+                    } else {
+                        quiverContainer.style.display = 'none';
+                    }
+                    
+                    // Show/hide histogram based on registration method
+                    if (data.histogramPlot) {
+                        document.getElementById('histogramPlotResult').src = 'data:image/png;base64,' + data.histogramPlot;
+                        histogramContainer.style.display = 'block';
+                    } else {
+                        histogramContainer.style.display = 'none';
+                    }
+                    
+                    // Show results section
+                    results.style.display = 'block';
+                })
+                .catch(error => {
+                    // Hide loading spinner
+                    loading.style.display = 'none';
+                    
+                    // Show error message
+                    errorMessage.textContent = error.message;
+                    errorAlert.style.display = 'block';
+                });
+            });
+        });
+    </script>
+</body>
+</html>
