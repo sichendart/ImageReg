@@ -98,7 +98,7 @@ class ImageRegistration:
         if self.crop_size > 0:
             self.base_image = self._crop_border(self.base_image, self.crop_size)
             self.target_image = self._crop_border(self.target_image, self.crop_size)
-            
+        print (self.base_image)    
         return self.base_image, self.target_image
     
     def normalize_images(self):
