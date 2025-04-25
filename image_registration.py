@@ -31,7 +31,13 @@ class ImageRegistration:
         # For visualization
         self.rgb_before = None
         self.rgb_after = None
-        
+
+    def testing(self):
+        """
+        For testing only
+        """
+        print(1)
+
     def load_and_crop_images(self, base_path, target_path):
         """
         Load images from file paths and crop borders if needed.
@@ -98,7 +104,7 @@ class ImageRegistration:
         if self.crop_size > 0:
             self.base_image = self._crop_border(self.base_image, self.crop_size)
             self.target_image = self._crop_border(self.target_image, self.crop_size)
-        print (self.base_image)    
+           
         return self.base_image, self.target_image
     
     def normalize_images(self):
@@ -128,7 +134,7 @@ class ImageRegistration:
         
         return self.base_image_normalized, self.target_image_normalized
     
-    def register_images(self, method='rigid', threshold=10):
+    def register_images(self, method='rigid'):
         """
         Register the target image with the base image using the specified method.
         
@@ -136,8 +142,6 @@ class ImageRegistration:
         -----------
         method : str
             Registration method ('rigid', 'nonrigid', 'sift', 'orb')
-        threshold : int
-            Threshold for optical flow vectors (used in nonrigid registration)
             
         Returns:
         --------
@@ -147,7 +151,7 @@ class ImageRegistration:
         if method == 'rigid':
             return self._rigid_registration()
         elif method == 'nonrigid':
-            return self._nonrigid_registration(threshold)
+            return self._nonrigid_registration()
         elif method == 'sift':
             return self._feature_based_registration('sift')
         elif method == 'orb':
@@ -155,14 +159,14 @@ class ImageRegistration:
         else:
             raise ValueError(f"Unsupported registration method: {method}")
     
-    def create_visualization(self, method='rigid'):
+    def create_visualization(self):
         """
         Create visualization images: RGB overlays before and after registration.
         
-        Parameters:
-        -----------
-        method : str
-            Registration method ('rigid', 'nonrigid', 'sift', 'orb')
+        # Parameters:
+        # -----------
+        # method : str
+        #     Registration method ('rigid', 'nonrigid', 'sift', 'orb')
             
         Returns:
         --------
@@ -196,15 +200,17 @@ class ImageRegistration:
         
         return self.rgb_before, self.rgb_after
     
-    def generate_quiver_plot_data(self, step=20):
+    def generate_quiver_plot_data(self, nvec=20, threshold=6):
         """
         Generate data for creating a quiver plot of the flow vectors.
         
         Parameters:
         -----------
-        step : int
-            Sampling step for the flow vectors (higher values mean fewer arrows)
-            
+        nvec : int
+            Number of vectors to be displayed along each image dimension
+        threshold: int
+            Only shifts larger than the threshold are displayed
+
         Returns:
         --------
         dict
@@ -217,10 +223,18 @@ class ImageRegistration:
             
         u, v = self.flow_vectors
         nl, nc = self.base_image_normalized.shape
+        step = max(nl // nvec, nc // nvec)
         
         # Create meshgrid for arrow positions
         y, x = np.mgrid[:nl:step, :nc:step]
-        
+
+        # Apply threshold if specified
+        if threshold > 0:
+            mask = np.where(self.flow_magnitude > threshold, 1, 0)
+            u = u * mask
+            v = v * mask
+            # self.flow_vectors = (u, v)
+       
         # Subsample flow vectors
         u_sub = u[::step, ::step]
         v_sub = v[::step, ::step]
@@ -309,19 +323,15 @@ class ImageRegistration:
         self.registered_image = transform.warp(
             self.target_image_normalized, 
             rigid_shift,
-            mode='edge'
+            #cval=0, # to fill missing area with a set value
+            mode='edge' # to fill missing area with the edge value
         )
         
         return self.registered_image
     
-    def _nonrigid_registration(self, threshold=10):
+    def _nonrigid_registration(self):
         """
         Perform non-rigid registration using optical flow.
-        
-        Parameters:
-        -----------
-        threshold : int
-            Threshold for optical flow vectors magnitude
             
         Returns:
         --------
@@ -335,7 +345,9 @@ class ImageRegistration:
         # First do rigid registration to align globally
         self._rigid_registration()
         
-        # Then perform optical flow for local distortions
+        # Then perform optical flow for local distortions 
+        # u is the shift in the horizontal direction; v is in the vertical direction
+        
         v, u = optical_flow_tvl1(
             self.base_image_normalized, 
             self.registered_image
@@ -344,13 +356,6 @@ class ImageRegistration:
         # Store flow vectors and calculate magnitude
         self.flow_vectors = (u, v)
         self.flow_magnitude = np.sqrt(u**2 + v**2)
-        
-        # Apply threshold if specified
-        if threshold > 0:
-            mask = np.where(self.flow_magnitude > threshold, 1, 0)
-            u = u * mask
-            v = v * mask
-            self.flow_vectors = (u, v)
         
         # Warp image using flow vectors
         nr, nc = self.base_image_normalized.shape
