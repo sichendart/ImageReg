@@ -1,6 +1,9 @@
 from flask import Flask, render_template, request, jsonify, send_file, url_for
 import os
 import numpy as np
+# force it to use a non-GUI backend; otherwise it raise an NSException issue (macOS + Matplotlib issue)
+import matplotlib
+matplotlib.use('Agg') 
 import matplotlib.pyplot as plt
 import io
 import base64
@@ -9,7 +12,9 @@ from image_registration import ImageRegistration
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max upload size
+# app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max upload size
+# changed to 64 to handle image with large size
+app.config['MAX_CONTENT_LENGTH'] = 64 * 1024 * 1024
 app.config['ALLOWED_EXTENSIONS'] = {'png', 'jpg', 'jpeg', 'tif', 'tiff', 'h5'}
 
 # Ensure upload directory exists
@@ -129,10 +134,12 @@ def register_images():
         reg.normalize_images()
         
         # Register images
-        reg.register_images(method=reg_method, threshold=threshold)
-        
+        # reg.register_images(method=reg_method, threshold=threshold)
+        reg.register_images(method=reg_method)
+
         # Create visualizations
-        reg.create_visualization(method=reg_method)
+        # reg.create_visualization(method=reg_method)
+        reg.create_visualization()
         
         # Generate base64 images for display
         base_img_b64 = plot_to_base64(reg.base_image_normalized, title="Base Image")
@@ -151,7 +158,7 @@ def register_images():
         
         # Add quiver plot for non-rigid registration
         if reg_method == 'nonrigid':
-            quiver_data = reg.generate_quiver_plot_data(step=20)
+            quiver_data = reg.generate_quiver_plot_data(nvec=20, threshold = threshold)
             if quiver_data:
                 quiver_b64 = quiver_plot_to_base64(
                     reg.base_image_normalized, 
@@ -160,18 +167,21 @@ def register_images():
                 )
                 result['quiverPlot'] = quiver_b64
                 
-                # Add histogram data
-                hist_data = reg.calculate_histogram_data()
-                if hist_data:
-                    hist_b64 = histogram_plot_to_base64(
-                        hist_data, 
-                        title="Flow Vector Histograms"
-                    )
-                    result['histogramPlot'] = hist_b64
+        # Add histogram data
+        hist_data = reg.calculate_histogram_data()
+        if hist_data:
+            hist_b64 = histogram_plot_to_base64(
+                hist_data, 
+                title="Flow Vector Histograms"
+            )
+            result['histogramPlot'] = hist_b64
         
         return jsonify(result)
         
     except Exception as e:
+        # to show where and why the error occur
+        import traceback
+        traceback.print_exc() 
         return jsonify({'error': str(e)}), 500
     finally:
         # Clean up uploaded files
