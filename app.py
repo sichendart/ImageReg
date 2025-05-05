@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import io
 import base64
 from werkzeug.utils import secure_filename
+from PIL import Image
 from image_registration import ImageRegistration
 
 app = Flask(__name__)
@@ -94,6 +95,68 @@ def histogram_plot_to_base64(hist_data, title=None):
 @app.route('/')
 def index():
     return render_template('index.html')
+
+@app.route('/inspect', methods=['POST'])
+def inspect_image():
+    file = request.files.get('image')
+    if not file:
+        return jsonify({'error': 'No file uploaded'}), 400
+
+    try:
+        # Obtain the metadata
+        image = Image.open(file.stream)
+        width, height = image.size
+        mode = image.mode  # 'L', 'RGB', etc.
+        format = image.format  # 'JPEG', 'PNG', etc.
+        bit_depth = image.bits if hasattr(image, 'bits') else 'Unknown'
+        color_type = 'Color' if mode in ['RGB', 'RGBA', 'CMYK'] else 'Grayscale'
+
+        print(f"Processing image: format={format}, mode={mode}, size={width}x{height}")
+
+        # Generate preview for all image types
+        buffered = io.BytesIO()
+        try:
+            if format == 'TIFF':
+                print("Converting TIFF to RGB...")
+                # For TIFF files, handle different modes
+                if mode == 'I;16':  # 16-bit grayscale
+                    print("Converting 16-bit grayscale to 8-bit...")
+                    # Convert to numpy array for processing
+                    img_array = np.array(image)
+                    # Normalize to 0-255 range
+                    img_array = ((img_array - img_array.min()) * (255.0 / (img_array.max() - img_array.min()))).astype(np.uint8)
+                    # Convert back to PIL Image
+                    image = Image.fromarray(img_array)
+                    # Convert to RGB
+                    image = image.convert('RGB')
+                elif mode != 'RGB':
+                    image = image.convert('RGB')
+                
+                print("Saving TIFF as JPEG...")
+                image.save(buffered, format='JPEG', quality=95)
+            else:
+                # For other formats, save directly as JPEG
+                image.save(buffered, format='JPEG', quality=95)
+            
+            img_str = base64.b64encode(buffered.getvalue()).decode()
+            preview_data = f"data:image/jpeg;base64,{img_str}"
+            print("Preview generated successfully")
+        except Exception as e:
+            print(f"Error generating preview: {str(e)}")
+            return jsonify({'error': f'Error generating preview: {str(e)}'}), 500
+
+        return jsonify({
+            'width': width,
+            'height': height,
+            'mode': mode,
+            'format': format,
+            'bit_depth': bit_depth,
+            'color_type': color_type,
+            'preview_data': preview_data
+        })
+    except Exception as e:
+        print(f"General error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/register', methods=['POST'])
 def register_images():
